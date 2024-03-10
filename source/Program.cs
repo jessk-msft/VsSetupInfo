@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.VisualStudio.Setup.Configuration;
 
-namespace Sledge.VsExtensionDetector
+namespace VsSetupInfo
 {
 	class Program
 	{
