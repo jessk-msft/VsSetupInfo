@@ -1,5 +1,5 @@
 # VsSetupInfo
-Command line application to show Visual Studio installation information. Prints details for installed Visual Studio locations and packages. This is somewhat similar to the `vswhere.exe` tool. 
+Command line application to show Visual Studio installation information. Prints details for installed Visual Studio locations and packages. It also includes details of installed components and user extensions. This is somewhat similar to the [vswhere](https://github.com/microsoft/vswhere) tool. 
 
 # Example Output
 ```
