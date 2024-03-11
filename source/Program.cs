@@ -3,7 +3,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Xml;
 using System.Runtime.InteropServices;
+using System.Reflection;
 using Microsoft.VisualStudio.Setup.Configuration;
 
 namespace VsSetupInfo
@@ -52,6 +55,11 @@ namespace VsSetupInfo
 						}
 					}
 
+					foreach (ISetupPackageReference package in GetUserExtensionPackages(instance.GetInstallationVersion()))
+					{
+						Console.WriteLine("Extension: {0}", PackageToJsonString(package));
+					}
+
 					Console.WriteLine("");
 				}
 			}
@@ -97,6 +105,130 @@ namespace VsSetupInfo
 		private static IDisposable CreateDisposableComObject(object obj)
 		{
 			return new DisposableAction(() => Marshal.ReleaseComObject(obj));
+		}
+
+		private static IEnumerable<ISetupPackageReference> GetUserExtensionPackages(string vsVersionString)
+		{
+			if (Version.TryParse(vsVersionString, out Version vsVersion))
+			{
+				string vsAppDataFolder = String.Format("{0}\\Microsoft\\VisualStudio", Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+				foreach (string vsAppDataVersionFolder in TryEnumerateDirectories(vsAppDataFolder, String.Format("{0}.*", vsVersion.Major)))
+				{
+					foreach (string vsExtensionPackageFolder in TryEnumerateDirectories(String.Format("{0}\\Extensions", vsAppDataVersionFolder), "*"))
+					{
+						ISetupPackageReference package = ReadVsixPackageReference(vsExtensionPackageFolder);
+						if (package != null) 
+						{
+							yield return package;
+						}
+					}
+				}
+			}
+		}
+
+		private static ISetupPackageReference ReadVsixPackageReference(string packageFolder)
+		{
+			try
+			{
+				UserExtensionPackageReference package = new UserExtensionPackageReference();
+
+				string manifestFile = String.Format("{0}\\manifest.json", packageFolder);
+				if (File.Exists(manifestFile)) 
+				{
+					JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestFile));
+
+					if (document.RootElement.TryGetProperty("id", out JsonElement id))
+						package.Id = id.GetString();
+					if (document.RootElement.TryGetProperty("version", out JsonElement version))
+						package.Version = version.GetString();
+					if (document.RootElement.TryGetProperty("type", out JsonElement type))
+						package.Type = type.GetString();
+					if (document.RootElement.TryGetProperty("vsixId", out JsonElement vsixId))
+						package.UniqueId = vsixId.GetString();
+				}
+
+				string vsixManifestFile = String.Format("{0}\\extension.vsixmanifest", packageFolder);
+				if (File.Exists(vsixManifestFile))
+				{
+					XmlDocument document = new XmlDocument();
+					using (XmlTextReader reader = new XmlTextReader(vsixManifestFile))
+					{
+						reader.Namespaces = false;
+						document.Load(reader);
+					}
+
+					if (document.SelectSingleNode("PackageManifest/Metadata/Identity") is XmlElement identityElement)
+					{
+						if (package.Id == null)
+							package.Id = identityElement.GetAttribute("Id");
+						if (package.Language == null)
+							package.Language = identityElement.GetAttribute("Language");
+						if (package.Version == null)
+							package.Version = identityElement.GetAttribute("Version");
+					}
+					if (document.SelectSingleNode("PackageManifest/Metadata/DisplayName") is XmlElement displayNameElement)
+					{
+						package.Branch = displayNameElement.InnerText;
+					}
+					if (document.SelectSingleNode("PackageManifest/Installation/InstallationTarget/ProductArchitecture") is XmlElement archElement)
+					{
+						package.Chip = archElement.InnerText;
+					}
+				}
+
+				if (package.IsValid)
+				{
+					return package;
+				}
+			}
+			catch (Exception e) 
+			{
+				Console.WriteLine("Exception reading folder \"{0}\". {1}", packageFolder, e.Message);
+			}
+			return null;
+		}
+
+		private static IEnumerable<string> TryEnumerateDirectories(string srcFolder, string srcPattern = "*", SearchOption srcOption = SearchOption.TopDirectoryOnly)
+		{
+			try
+			{
+				if (Directory.Exists(srcFolder))
+				{
+					return Directory.EnumerateDirectories(srcFolder, srcPattern, srcOption);
+				}
+			}
+			catch {}
+			return Enumerable.Empty<string>();
+		}
+	}
+
+	public class UserExtensionPackageReference : ISetupPackageReference
+	{
+		public string Id { get; set; }
+		public string Version { get; set; }
+		public string Chip { get; set; }
+		public string Language { get; set; }
+		public string Branch { get; set; }
+		public string Type { get; set; }
+		public string UniqueId { get; set; }
+
+		string ISetupPackageReference.GetId() => Id;
+		string ISetupPackageReference.GetVersion() => Version;
+		string ISetupPackageReference.GetChip() => Chip;
+		string ISetupPackageReference.GetLanguage() => Language;
+		string ISetupPackageReference.GetBranch() => Branch;
+		string ISetupPackageReference.GetType() => Type;
+		string ISetupPackageReference.GetUniqueId() => UniqueId;
+		bool ISetupPackageReference.GetIsExtension() => true;
+
+		public bool IsValid
+		{
+			get 
+			{ 
+				return typeof(UserExtensionPackageReference)
+					.GetProperties(BindingFlags.Instance|BindingFlags.Public)
+					.Any(p => !String.IsNullOrEmpty(p.GetValue(this) as string));
+			}
 		}
 	}
 
