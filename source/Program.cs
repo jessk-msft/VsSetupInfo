@@ -46,18 +46,18 @@ namespace VsSetupInfo
 					{
 						Console.WriteLine("State: {0}", instance2.GetState());
 						Console.WriteLine("Properties: {0}", PropertiesToJsonString(instance2.GetProperties()));
-						Console.WriteLine("Product: {0}", PackageToJsonString(instance2.GetProduct()));
+						Console.WriteLine("Product: {0}", PackageReferenceToJsonString(instance2.GetProduct()));
 						Console.WriteLine("ProductPath: {0}", instance2.GetProductPath());
 						Console.WriteLine("EnginePath: {0}", instance2.GetEnginePath());
 						foreach (ISetupPackageReference package in instance2.GetPackages())
 						{
-							Console.WriteLine("Package: {0}", PackageToJsonString(package));
+							Console.WriteLine("Package: {0}", PackageReferenceToJsonString(package));
 						}
 					}
 
-					foreach (ISetupPackageReference package in GetUserExtensionPackages(instance.GetInstallationVersion()))
+					foreach (VsPackage package in GetExtensionPackages(instance.GetInstallationVersion()))
 					{
-						Console.WriteLine("Extension: {0}", PackageToJsonString(package));
+						Console.WriteLine("Extension: {0}", ToJsonString(package));
 					}
 
 					Console.WriteLine("");
@@ -74,7 +74,7 @@ namespace VsSetupInfo
 
 		private static string ToJsonString(object obj)
 		{
-			return System.Text.Json.JsonSerializer.Serialize(obj);
+			return JsonSerializer.Serialize(obj);
 		}
 
 		private static string PropertiesToJsonString(ISetupPropertyStore store)
@@ -82,7 +82,7 @@ namespace VsSetupInfo
 			return ToJsonString(store?.GetNames()?.Select(n => new KeyValuePair<string, string>(n, store.GetValue(n)))?.ToList());
 		}
 
-		private static string PackageToJsonString(ISetupPackageReference package)
+		private static string PackageReferenceToJsonString(ISetupPackageReference package)
 		{
 			ISetupProductReference product = package as ISetupProductReference;
 			ISetupProductReference2 product2 = package as ISetupProductReference2;
@@ -104,84 +104,118 @@ namespace VsSetupInfo
 
 		private static IDisposable CreateDisposableComObject(object obj)
 		{
-			return new DisposableAction(() => Marshal.ReleaseComObject(obj));
+			return new VsDisposableAction(() => Marshal.ReleaseComObject(obj));
 		}
 
-		private static IEnumerable<ISetupPackageReference> GetUserExtensionPackages(string vsVersionString)
+		private IEnumerable<VsPackage> GetComponentPackages( ISetupPackageReference[] setupPackages )
 		{
-			if (Version.TryParse(vsVersionString, out Version vsVersion))
+			foreach( ISetupPackageReference setupPackage in setupPackages )
 			{
-				string vsAppDataFolder = String.Format("{0}\\Microsoft\\VisualStudio", Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
-				foreach (string vsAppDataVersionFolder in TryEnumerateDirectories(vsAppDataFolder, String.Format("{0}.*", vsVersion.Major)))
+				yield return new VsPackage
 				{
-					foreach (string vsExtensionPackageFolder in TryEnumerateDirectories(String.Format("{0}\\Extensions", vsAppDataVersionFolder), "*"))
+					Id = setupPackage.GetId(),
+					Version = setupPackage.GetVersion(),
+					Chip = setupPackage.GetChip(),
+					Language = setupPackage.GetLanguage(),
+					Branch = setupPackage.GetBranch(),
+					Type = setupPackage.GetType(),
+					UniqueId = setupPackage.GetUniqueId()
+				};
+			}
+		}
+
+		private static IEnumerable<VsPackage> GetExtensionPackages( string vsVersionString )
+		{
+			if( Version.TryParse( vsVersionString, out Version vsVersion ) )
+			{
+				string vsAppDataFolder = String.Format( "{0}\\Microsoft\\VisualStudio", Environment.GetFolderPath( Environment.SpecialFolder.LocalApplicationData ) );
+				foreach( string vsAppDataVersionFolder in TryEnumerateDirectories( vsAppDataFolder, String.Format( "{0}.*", vsVersion.Major ) ) )
+				{
+					foreach( string vsExtensionPackageFolder in TryEnumerateDirectories( String.Format( "{0}\\Extensions", vsAppDataVersionFolder ), "*" ) )
 					{
-						ISetupPackageReference package = ReadVsixPackageReference(vsExtensionPackageFolder);
-						if (package != null) 
+						if( FindVsixExtensionPackage( vsExtensionPackageFolder ) is VsPackage vsPackage )
 						{
-							yield return package;
+							yield return vsPackage;
 						}
 					}
 				}
 			}
 		}
 
-		private static ISetupPackageReference ReadVsixPackageReference(string packageFolder)
+		private static VsPackage FindVsixExtensionPackage( string packageFolder )
 		{
 			try
 			{
-				UserExtensionPackageReference package = new UserExtensionPackageReference();
+				VsPackage package = new VsPackage();
 
-				string manifestFile = String.Format("{0}\\manifest.json", packageFolder);
-				if (File.Exists(manifestFile)) 
+				string manifestFile = String.Format( "{0}\\manifest.json", packageFolder );
+				if( File.Exists( manifestFile ) )
 				{
-					JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestFile));
+					JsonDocument document = JsonDocument.Parse( File.ReadAllText( manifestFile ) );
 
-					if (document.RootElement.TryGetProperty("id", out JsonElement id))
+					if( document.RootElement.TryGetProperty( "id", out JsonElement id ) )
+					{
 						package.Id = id.GetString();
-					if (document.RootElement.TryGetProperty("version", out JsonElement version))
+					}
+					if( document.RootElement.TryGetProperty( "version", out JsonElement version ) )
+					{
 						package.Version = version.GetString();
-					if (document.RootElement.TryGetProperty("type", out JsonElement type))
+					}
+					if( document.RootElement.TryGetProperty( "type", out JsonElement type ) )
+					{
 						package.Type = type.GetString();
-					if (document.RootElement.TryGetProperty("vsixId", out JsonElement vsixId))
+					}
+					if( document.RootElement.TryGetProperty( "vsixId", out JsonElement vsixId ) )
+					{
 						package.UniqueId = vsixId.GetString();
+					}
 				}
 
-				string vsixManifestFile = String.Format("{0}\\extension.vsixmanifest", packageFolder);
-				if (File.Exists(vsixManifestFile))
+				string vsixManifestFile = String.Format( "{0}\\extension.vsixmanifest", packageFolder );
+				if( File.Exists( vsixManifestFile ) )
 				{
 					XmlDocument document = new XmlDocument();
-					using (XmlTextReader reader = new XmlTextReader(vsixManifestFile))
+					using( XmlTextReader reader = new XmlTextReader( vsixManifestFile ) )
 					{
 						reader.Namespaces = false;
-						document.Load(reader);
+						document.Load( reader );
 					}
 
-					if (document.SelectSingleNode("PackageManifest/Metadata/Identity") is XmlElement identityElement)
+					if( document.SelectSingleNode( "PackageManifest/Metadata/Identity" ) is XmlElement identityElement )
 					{
-						if (package.Id == null)
-							package.Id = identityElement.GetAttribute("Id");
-						if (package.Language == null)
-							package.Language = identityElement.GetAttribute("Language");
-						if (package.Version == null)
-							package.Version = identityElement.GetAttribute("Version");
+						if( package.Id == null )
+						{
+							package.Id = identityElement.GetAttribute( "Id" );
+						}
+						if( package.Language == null )
+						{
+							package.Language = identityElement.GetAttribute( "Language" );
+						}
+						if( package.Version == null )
+						{
+							package.Version = identityElement.GetAttribute( "Version" );
+						}
 					}
-					if (document.SelectSingleNode("PackageManifest/Metadata/DisplayName") is XmlElement displayNameElement)
+					if( document.SelectSingleNode( "PackageManifest/Metadata/DisplayName" ) is XmlElement displayNameElement )
 					{
 						package.Branch = displayNameElement.InnerText;
 					}
-					if (document.SelectSingleNode("PackageManifest/Installation/InstallationTarget/ProductArchitecture") is XmlElement archElement)
+					if( document.SelectSingleNode( "PackageManifest/Installation/InstallationTarget/ProductArchitecture" ) is XmlElement archElement )
 					{
 						package.Chip = archElement.InnerText;
 					}
 				}
 
-				if (package.IsValid)
+				bool isPackageValid = package.GetType()
+					.GetProperties( BindingFlags.Instance | BindingFlags.Public )
+					.Any( p => !String.IsNullOrEmpty( p.GetValue( package ) as string ) );
+
+				if( isPackageValid )
 				{
 					return package;
 				}
 			}
-			catch (Exception e) 
+			catch( Exception e )
 			{
 				Console.WriteLine("Exception reading folder \"{0}\". {1}", packageFolder, e.Message);
 			}
@@ -202,7 +236,17 @@ namespace VsSetupInfo
 		}
 	}
 
-	public class UserExtensionPackageReference : ISetupPackageReference
+	public class VsInstance
+	{
+		public string Id { get; set; }
+		public string Name { get; set; }
+		public string DisplayName { get; set; }
+		public string Location { get; set; }
+		public string Version { get; set; }
+		public List<VsPackage> Packages { get; } = new List<VsPackage>();
+	}
+
+	public class VsPackage
 	{
 		public string Id { get; set; }
 		public string Version { get; set; }
@@ -211,31 +255,12 @@ namespace VsSetupInfo
 		public string Branch { get; set; }
 		public string Type { get; set; }
 		public string UniqueId { get; set; }
-
-		string ISetupPackageReference.GetId() => Id;
-		string ISetupPackageReference.GetVersion() => Version;
-		string ISetupPackageReference.GetChip() => Chip;
-		string ISetupPackageReference.GetLanguage() => Language;
-		string ISetupPackageReference.GetBranch() => Branch;
-		string ISetupPackageReference.GetType() => Type;
-		string ISetupPackageReference.GetUniqueId() => UniqueId;
-		bool ISetupPackageReference.GetIsExtension() => true;
-
-		public bool IsValid
-		{
-			get 
-			{ 
-				return typeof(UserExtensionPackageReference)
-					.GetProperties(BindingFlags.Instance|BindingFlags.Public)
-					.Any(p => !String.IsNullOrEmpty(p.GetValue(this) as string));
-			}
-		}
 	}
 
-	public class DisposableAction : IDisposable
+	public class VsDisposableAction : IDisposable
 	{
 		private Action _Action;
-		public DisposableAction(Action action) => _Action = action;
+		public VsDisposableAction(Action action) => _Action = action;
 		public void Dispose() => _Action.Invoke();
 	}
 }
