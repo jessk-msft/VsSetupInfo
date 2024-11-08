@@ -13,7 +13,7 @@ namespace VsSetupInfo
 {
 	class Program
 	{
-		public static Task<int> Main( string[] args )
+		public static Task<int> Main(string[] args)
 		{
 			int result = 0;
 			try
@@ -24,7 +24,7 @@ namespace VsSetupInfo
 				IEnumSetupInstances instances = configuration.EnumAllInstances();
 				using IDisposable instancesObject = CreateDisposableComObject(instances);
 
-				while (instances != null) 
+				while (instances != null)
 				{
 					ISetupInstance[] instanceArray = new ISetupInstance[1];
 					instances.Next(1, instanceArray, out int numFetched);
@@ -64,7 +64,7 @@ namespace VsSetupInfo
 				}
 			}
 			catch (Exception e)
-			{ 
+			{
 				Console.WriteLine("Unhandled exception: {0}", e.Message);
 				result = 1;
 			}
@@ -87,9 +87,9 @@ namespace VsSetupInfo
 			ISetupProductReference product = package as ISetupProductReference;
 			ISetupProductReference2 product2 = package as ISetupProductReference2;
 
-			return ToJsonString(new 
-			{ 
-				Id = package.GetId(), 
+			return ToJsonString(new
+			{
+				Id = package.GetId(),
 				Version = package.GetVersion(),
 				Chip = package.GetChip(),
 				Language = package.GetLanguage(),
@@ -107,9 +107,9 @@ namespace VsSetupInfo
 			return new VsDisposableAction(() => Marshal.ReleaseComObject(obj));
 		}
 
-		private IEnumerable<VsPackage> GetComponentPackages( ISetupPackageReference[] setupPackages )
+		private IEnumerable<VsPackage> GetComponentPackages(ISetupPackageReference[] setupPackages)
 		{
-			foreach( ISetupPackageReference setupPackage in setupPackages )
+			foreach (ISetupPackageReference setupPackage in setupPackages)
 			{
 				yield return new VsPackage
 				{
@@ -124,16 +124,16 @@ namespace VsSetupInfo
 			}
 		}
 
-		private static IEnumerable<VsPackage> GetExtensionPackages( string vsVersionString )
+		private static IEnumerable<VsPackage> GetExtensionPackages(string vsVersionString)
 		{
-			if( Version.TryParse( vsVersionString, out Version vsVersion ) )
+			if (Version.TryParse(vsVersionString, out Version vsVersion))
 			{
-				string vsAppDataFolder = String.Format( "{0}\\Microsoft\\VisualStudio", Environment.GetFolderPath( Environment.SpecialFolder.LocalApplicationData ) );
-				foreach( string vsAppDataVersionFolder in TryEnumerateDirectories( vsAppDataFolder, String.Format( "{0}.*", vsVersion.Major ) ) )
+				string vsAppDataFolder = String.Format("{0}\\Microsoft\\VisualStudio", Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+				foreach (string vsAppDataVersionFolder in TryEnumerateDirectories(vsAppDataFolder, String.Format("{0}.*", vsVersion.Major)))
 				{
-					foreach( string vsExtensionPackageFolder in TryEnumerateDirectories( String.Format( "{0}\\Extensions", vsAppDataVersionFolder ), "*" ) )
+					foreach (string vsExtensionPackageFolder in TryEnumerateDirectories(String.Format("{0}\\Extensions", vsAppDataVersionFolder), "*"))
 					{
-						if( FindVsixExtensionPackage( vsExtensionPackageFolder ) is VsPackage vsPackage )
+						if (FindVsixExtensionPackage(vsExtensionPackageFolder) is VsPackage vsPackage)
 						{
 							yield return vsPackage;
 						}
@@ -142,80 +142,80 @@ namespace VsSetupInfo
 			}
 		}
 
-		private static VsPackage FindVsixExtensionPackage( string packageFolder )
+		private static VsPackage FindVsixExtensionPackage(string packageFolder)
 		{
 			try
 			{
 				VsPackage package = new VsPackage();
 
-				string manifestFile = String.Format( "{0}\\manifest.json", packageFolder );
-				if( File.Exists( manifestFile ) )
+				string manifestFile = String.Format("{0}\\manifest.json", packageFolder);
+				if (File.Exists(manifestFile))
 				{
-					JsonDocument document = JsonDocument.Parse( File.ReadAllText( manifestFile ) );
+					JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestFile));
 
-					if( document.RootElement.TryGetProperty( "id", out JsonElement id ) )
+					if (document.RootElement.TryGetProperty("id", out JsonElement id))
 					{
 						package.Id = id.GetString();
 					}
-					if( document.RootElement.TryGetProperty( "version", out JsonElement version ) )
+					if (document.RootElement.TryGetProperty("version", out JsonElement version))
 					{
 						package.Version = version.GetString();
 					}
-					if( document.RootElement.TryGetProperty( "type", out JsonElement type ) )
+					if (document.RootElement.TryGetProperty("type", out JsonElement type))
 					{
 						package.Type = type.GetString();
 					}
-					if( document.RootElement.TryGetProperty( "vsixId", out JsonElement vsixId ) )
+					if (document.RootElement.TryGetProperty("vsixId", out JsonElement vsixId))
 					{
 						package.UniqueId = vsixId.GetString();
 					}
 				}
 
-				string vsixManifestFile = String.Format( "{0}\\extension.vsixmanifest", packageFolder );
-				if( File.Exists( vsixManifestFile ) )
+				string vsixManifestFile = String.Format("{0}\\extension.vsixmanifest", packageFolder);
+				if (File.Exists(vsixManifestFile))
 				{
 					XmlDocument document = new XmlDocument();
-					using( XmlTextReader reader = new XmlTextReader( vsixManifestFile ) )
+					using (XmlTextReader reader = new XmlTextReader(vsixManifestFile))
 					{
 						reader.Namespaces = false;
-						document.Load( reader );
+						document.Load(reader);
 					}
 
-					if( document.SelectSingleNode( "PackageManifest/Metadata/Identity" ) is XmlElement identityElement )
+					if (document.SelectSingleNode("PackageManifest/Metadata/Identity") is XmlElement identityElement)
 					{
-						if( package.Id == null )
+						if (package.Id == null)
 						{
-							package.Id = identityElement.GetAttribute( "Id" );
+							package.Id = identityElement.GetAttribute("Id");
 						}
-						if( package.Language == null )
+						if (package.Language == null)
 						{
-							package.Language = identityElement.GetAttribute( "Language" );
+							package.Language = identityElement.GetAttribute("Language");
 						}
-						if( package.Version == null )
+						if (package.Version == null)
 						{
-							package.Version = identityElement.GetAttribute( "Version" );
+							package.Version = identityElement.GetAttribute("Version");
 						}
 					}
-					if( document.SelectSingleNode( "PackageManifest/Metadata/DisplayName" ) is XmlElement displayNameElement )
+					if (document.SelectSingleNode("PackageManifest/Metadata/DisplayName") is XmlElement displayNameElement)
 					{
 						package.Branch = displayNameElement.InnerText;
 					}
-					if( document.SelectSingleNode( "PackageManifest/Installation/InstallationTarget/ProductArchitecture" ) is XmlElement archElement )
+					if (document.SelectSingleNode("PackageManifest/Installation/InstallationTarget/ProductArchitecture") is XmlElement archElement)
 					{
 						package.Chip = archElement.InnerText;
 					}
 				}
 
 				bool isPackageValid = package.GetType()
-					.GetProperties( BindingFlags.Instance | BindingFlags.Public )
-					.Any( p => !String.IsNullOrEmpty( p.GetValue( package ) as string ) );
+					.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+					.Any(p => !String.IsNullOrEmpty(p.GetValue(package) as string));
 
-				if( isPackageValid )
+				if (isPackageValid)
 				{
 					return package;
 				}
 			}
-			catch( Exception e )
+			catch (Exception e)
 			{
 				Console.WriteLine("Exception reading folder \"{0}\". {1}", packageFolder, e.Message);
 			}
@@ -231,7 +231,7 @@ namespace VsSetupInfo
 					return Directory.EnumerateDirectories(srcFolder, srcPattern, srcOption);
 				}
 			}
-			catch {}
+			catch { }
 			return Enumerable.Empty<string>();
 		}
 	}
